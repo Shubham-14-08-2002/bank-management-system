@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Management Portal</title>
+    <style>
+        :root { --primary: #0056b3; --dark: #222; --bg: #f4f6f9; --danger: #dc3545; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 20px; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 24px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1, h2 { color: var(--dark); margin-top: 0; }
+        .card { background: #fafafa; border: 1px solid #e1e4e8; padding: 16px; border-radius: 6px; margin-bottom: 20px; }
+        input, select, button { width: 100%; padding: 10px; margin: 8px 0; box-sizing: border-box; border-radius: 4px; border: 1px solid #ccc; font-size: 14px; }
+        button { background: var(--primary); color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:hover { opacity: 0.9; }
+        
+        .tab-bar { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #e1e4e8; padding-bottom: 10px; }
+        .tab-btn { width: auto; padding: 10px 20px; background: #e9ecef; color: var(--dark); border-radius: 4px; font-weight: 600; }
+        .tab-btn.active { background: var(--primary); color: white; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background: #f0f3f6; }
+        .btn-sm { width: auto; padding: 6px 12px; margin: 2px; font-size: 12px; }
+        .btn-danger { background: var(--danger); }
+        .btn-warning { background: #ffc107; color: black; }
+
+        .hidden { display: none; }
+        .alert { padding: 12px; border-radius: 4px; margin-bottom: 15px; }
+        .alert-info { background: #d1ecf1; color: #0c5460; }
+        .alert-error { background: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Core Banking Portal</h1>
+    <div id="statusAlert" class="alert hidden"></div>
+
+    <div id="authSection" class="card">
+        <h2>Manager Authentication</h2>
+        <input type="text" id="username" placeholder="Username" value="admin">
+        <input type="password" id="password" placeholder="Password" value="admin123">
+        <button onclick="login()">Login</button>
+    </div>
+
+    <div id="appSection" class="hidden">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <strong>Manager Portal</strong>
+            <button style="width: auto; background: var(--danger);" onclick="logout()">Logout</button>
+        </div>
+
+        <div class="tab-bar">
+            <button class="tab-btn active" id="tabManageBtn" onclick="switchTab('manage')">Manage Accounts</button>
+            <button class="tab-btn" id="tabCreateBtn" onclick="switchTab('create')">Create New Account</button>
+        </div>
+
+        <div id="viewCreate" class="hidden">
+            <div class="card">
+                <h2>Open New Account</h2>
+                <input type="text" id="newFirstName" placeholder="First Name">
+                <input type="text" id="newLastName" placeholder="Last Name">
+                <input type="email" id="newEmail" placeholder="Email">
+                <input type="text" id="newPhone" placeholder="Mobile Number (10 digits)">
+                
+                <select id="newIdType">
+                    <option value="PAN">PAN Card</option>
+                    <option value="AADHAAR">Aadhaar Card</option>
+                </select>
+
+                <input type="text" id="newIdNumber" placeholder="ID Number">
+                <input type="number" id="newBalance" placeholder="Opening Balance" min="0" step="0.01" value="1000.00">
+                <button onclick="createAccount()">Register Account</button>
+            </div>
+        </div>
+
+        <div id="viewManage">
+            <div class="card">
+                <h2>Account-to-Account Transfer</h2>
+                <input type="text" id="intFrom" placeholder="Source Account">
+                <input type="text" id="intTo" placeholder="Destination Account">
+                <input type="number" id="intAmount" placeholder="Amount (INR)" step="0.01">
+                <button onclick="transferInternal()">Transfer Funds</button>
+            </div>
+
+            <div class="card">
+                <h2>Accounts List</h2>
+                <input type="text" id="searchBox" placeholder="Search..." onkeyup="searchAccounts()">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Account No</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Phone</th>
+                            <th>ID Type</th>
+                            <th>Balance</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="accountTable"></tbody>
+                </table>
+            </div>
+
+            <div id="editCard" class="card hidden">
+                <h2>Edit Account</h2>
+                <input type="hidden" id="editId">
+                <input type="text" id="editAccNo" readonly style="background: #e9ecef;">
+                <input type="text" id="editFirstName" placeholder="First Name">
+                <input type="text" id="editLastName" placeholder="Last Name">
+                <input type="email" id="editEmail" placeholder="Email">
+                <input type="text" id="editPhone" placeholder="Phone Number">
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="saveAccountUpdate()">Save</button>
+                    <button style="background: #6c757d;" onclick="cancelEdit()">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let authToken = localStorage.getItem("jwt_token") || null;
+    let accountsCache = [];
+
+    if (authToken) { showApp(); }
+
+    function notify(msg, isError = false) {
+        const el = document.getElementById("statusAlert");
+        el.className = "alert " + (isError ? "alert-error" : "alert-info");
+        el.innerText = msg;
+        el.classList.remove("hidden");
+        setTimeout(() => el.classList.add("hidden"), 4000);
+    }
+
+    function switchTab(tab) {
+        const isCreate = tab === 'create';
+        document.getElementById("viewCreate").classList.toggle("hidden", !isCreate);
+        document.getElementById("viewManage").classList.toggle("hidden", isCreate);
+        document.getElementById("tabCreateBtn").classList.toggle("active", isCreate);
+        document.getElementById("tabManageBtn").classList.toggle("active", !isCreate);
+        if (!isCreate) searchAccounts();
+    }
+
+    async function login() {
+        const res = await fetch("/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                username: document.getElementById("username").value.trim(),
+                password: document.getElementById("password").value.trim()
+            })
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            authToken = data.token;
+            localStorage.setItem("jwt_token", authToken);
+            notify("Logged in.");
+            showApp();
+        } else {
+            notify("Invalid credentials.", true);
+        }
+    }
+
+    function logout() {
+        authToken = null;
+        localStorage.removeItem("jwt_token");
+        document.getElementById("authSection").classList.remove("hidden");
+        document.getElementById("appSection").classList.add("hidden");
+    }
+
+    function showApp() {
+        document.getElementById("authSection").classList.add("hidden");
+        document.getElementById("appSection").classList.remove("hidden");
+        switchTab('manage');
+    }
+
+    async function searchAccounts() {
+        if (!authToken) return;
+        const q = document.getElementById("searchBox").value;
+        const res = await fetch(`/api/v1/customers/search?query=${encodeURIComponent(q)}`, {
+            headers: { "Authorization": "Bearer " + authToken }
+        });
+
+        if (res.status === 401) { logout(); return; }
+
+        if (res.ok) {
+            accountsCache = await res.json();
+            const table = document.getElementById("accountTable");
+            table.innerHTML = "";
+            accountsCache.forEach(acc => {
+                table.innerHTML += `
+                    <tr>
+                        <td><strong>${acc.accountNumber}</strong></td>
+                        <td>${acc.firstName} ${acc.lastName}</td>
+                        <td>${acc.email}</td>
+                        <td>${acc.phoneNumber}</td>
+                        <td>${acc.idType}</td>
+                        <td>₹ ${Number(acc.accountBalance).toFixed(2)}</td>
+                        <td>
+                            <button class="btn-sm btn-warning" onclick="startEdit(${acc.id})">Edit</button>
+                            <button class="btn-sm btn-danger" onclick="deleteAccount(${acc.id})">Delete</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+    }
+
+    async function createAccount() {
+        const payload = {
+            firstName: document.getElementById("newFirstName").value.trim(),
+            lastName: document.getElementById("newLastName").value.trim(),
+            email: document.getElementById("newEmail").value.trim(),
+            phoneNumber: document.getElementById("newPhone").value.trim(),
+            idType: document.getElementById("newIdType").value,
+            idNumber: document.getElementById("newIdNumber").value.trim(),
+            accountBalance: parseFloat(document.getElementById("newBalance").value) || 0.0
+        };
+
+        const res = await fetch("/api/v1/customers", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + authToken
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.status === 401) { logout(); return; }
+
+        if (res.ok) {
+            const created = await res.json();
+            notify("Account generated: " + created.accountNumber);
+            document.querySelectorAll("#viewCreate input").forEach(i => i.value = "");
+            switchTab('manage');
+        } else {
+            const err = await res.text();
+            notify("Failed: " + err, true);
+        }
+    }
+
+    function startEdit(id) {
+        const acc = accountsCache.find(a => a.id === id);
+        if (!acc) return;
+
+        document.getElementById("editId").value = acc.id;
+        document.getElementById("editAccNo").value = acc.accountNumber;
+        document.getElementById("editFirstName").value = acc.firstName;
+        document.getElementById("editLastName").value = acc.lastName;
+        document.getElementById("editEmail").value = acc.email;
+        document.getElementById("editPhone").value = acc.phoneNumber || "";
+        document.getElementById("editCard").classList.remove("hidden");
+    }
+
+    function cancelEdit() {
+        document.getElementById("editCard").classList.add("hidden");
+    }
+
+    async function saveAccountUpdate() {
+        const id = document.getElementById("editId").value;
+
+        const payload = {
+            firstName: document.getElementById("editFirstName").value.trim(),
+            lastName: document.getElementById("editLastName").value.trim(),
+            email: document.getElementById("editEmail").value.trim(),
+            phoneNumber: document.getElementById("editPhone").value.trim()
+        };
+
+        const res = await fetch(`/api/v1/customers/${id}`, {
+            method: "PUT",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + authToken
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            notify("Account updated.");
+            cancelEdit();
+            searchAccounts();
+        } else {
+            const err = await res.text();
+            notify("Update failed: " + err, true);
+        }
+    }
+
+    async function deleteAccount(id) {
+        if (!confirm("Delete this customer record?")) return;
+
+        const res = await fetch(`/api/v1/customers/${id}`, {
+            method: "DELETE",
+            headers: { "Authorization": "Bearer " + authToken }
+        });
+
+        if (res.ok) {
+            notify("Deleted.");
+            searchAccounts();
+        } else {
+            notify("Delete failed.", true);
+        }
+    }
+
+    async function transferInternal() {
+        const payload = {
+            fromAccount: document.getElementById("intFrom").value.trim(),
+            toAccount: document.getElementById("intTo").value.trim(),
+            amount: parseFloat(document.getElementById("intAmount").value)
+        };
+
+        const res = await fetch("/api/v1/customers/transfer/internal", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + authToken
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (res.status === 401) { logout(); return; }
+
+        if (res.ok) {
+            notify("Transfer successful.");
+            document.getElementById("intAmount").value = "";
+            searchAccounts();
+        } else {
+            const err = await res.text();
+            notify("Transfer failed: " + err, true);
+        }
+    }
+</script>
+</body>
+</html>
